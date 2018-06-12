@@ -1,0 +1,5 @@
+version: '2'
+services:
+    mysql: { container_name: obfuscator_mysql, restart: always, ports: ['4041:3306'], environment: { MYSQL_ROOT_PASSWORD: root, MYSQL_DATABASE: website, MYSQL_USER: webuser, MYSQL_PASSWORD: webpassword }, volumes: ['../db:/docker-entrypoint-initdb.d', /var/lib/mysql], image: 'creode/mysql:5.6' }
+    php: { container_name: obfuscator_php, ports: ['3041:80'], environment: { VIRTUAL_HOST: .obfuscator.docker }, volumes: ['../src:/var/www/html'], image: 'creode/php-apache:7.0', links: [mysql, mailcatcher] }
+    mailcatcher: { image: schickling/mailcatcher, container_name: obfuscator_mailcatcher, ports: ['5041:1080'] }

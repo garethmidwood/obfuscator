@@ -1,0 +1,5 @@
+active: true
+image: schickling/mailcatcher
+container_name: obfuscator_mailcatcher
+ports:
+    - '5041:1080'

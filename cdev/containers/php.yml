@@ -1,0 +1,10 @@
+active: true
+container_name: obfuscator_php
+ports:
+    - '3041:80'
+environment:
+    VIRTUAL_HOST: .obfuscator.docker
+volumes:
+    - '../src:/var/www/html'
+image: 'creode/php-apache:7.0'
+links: {  }

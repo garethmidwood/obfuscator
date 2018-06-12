@@ -1,0 +1,6 @@
+config:
+    docker: { name: obfuscator, package: creode/obfuscator, port: '041', sync: { active: false, version: '2', options: { verbose: true }, syncs: {  } }, compose: { version: '2', services: { mysql: { active: true }, php: { active: true, links: [mysql, mailcatcher] }, mailcatcher: { active: true }, redis: { active: false }, drush: { active: false } } } }
+    dir: { wrapper-repo: false, src: src }
+    environment: { type: docker, framework: custom }
+    backups: { user: creode, host: 192.168.0.97, port: '22', db-dir: /home/clients/<someone>/database/, db-file: weekly-backup.sql, media-dir: /home/clients/<someone>/media/, media-file: weekly-backup.tar }
+version: '2'

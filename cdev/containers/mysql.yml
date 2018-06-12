@@ -1,0 +1,14 @@
+active: true
+container_name: obfuscator_mysql
+restart: always
+ports:
+    - '4041:3306'
+environment:
+    MYSQL_ROOT_PASSWORD: root
+    MYSQL_DATABASE: website
+    MYSQL_USER: webuser
+    MYSQL_PASSWORD: webpassword
+volumes:
+    - '../db:/docker-entrypoint-initdb.d'
+    - /var/lib/mysql
+image: 'creode/mysql:5.6'
