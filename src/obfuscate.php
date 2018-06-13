@@ -54,6 +54,26 @@ if ($dbConnection->connect_errno) {
 
 // TODO: Move this into a task runner class
 foreach($config['source'] as $source) {
+    if (!isset($source['type'])) {
+        exit('source type node is required');
+    }
+
+    if (!isset($source['bucket'])) {
+        exit('source bucket node is required');
+    }
+
+    if (!isset($source['region'])) {
+        exit('source region node is required');
+    }
+
+    if (!isset($source['access'])) {
+        exit('source access node is required');
+    }
+
+    if (!isset($source['secret'])) {
+        exit('source secret node is required');
+    }
+
     // create AWS client
     $client = new \Aws\S3\S3Client([
         'region'  => $source['region'],
@@ -93,18 +113,24 @@ function processObfuscation(\Aws\S3\S3Client $sourceClient, array $pairedObjects
 
     foreach($pairedObjects as $path => $pair) {
         if (!isset($pair['sql'])) {
-            errorMessage("skipping $path as there is no sql file");
+            errorMessage("✗ Skipping $path as there is no sql file");
+            continue;
         }
 
         if (!isset($pair['yml'])) {
-            errorMessage("skipping $path as there is no yml file");
+            errorMessage("✗ Skipping $path as there is no yml file");
+            continue;
         }
 
         progressMessage('========================');
         progressMessage('Processing ' . $path);
 
         try {
-            // get the manifest
+            /**
+             * 
+             *  Download and parse manifest file
+             * 
+             */
             $result = $sourceClient->getObject([
                 'Bucket'     => $source['bucket'],
                 'Key'        => $path . DIRECTORY_SEPARATOR . $pair['yml'],
@@ -113,7 +139,51 @@ function processObfuscation(\Aws\S3\S3Client $sourceClient, array $pairedObjects
 
             progressMessage('✓ Downloaded manifest file');
 
-            // get the sql
+            $manifest = Yaml::parseFile(MANIFEST_FILE);
+
+            progressMessage('✓ Parsed manifest.yml');
+
+            if (!isset($manifest['destination'])) {
+                errorMessage('destination node is required', true);
+            }
+
+            if (!is_array($manifest['destination'])) {
+                errorMessage('destination node must be an array', true);
+            }
+
+            if (!isset($manifest['destination']['type'])) {
+                errorMessage('destination type node is required', true);
+            }
+
+            if (!isset($manifest['destination']['bucket'])) {
+                errorMessage('destination bucket node is required', true);
+            }
+
+            if (!isset($manifest['destination']['region'])) {
+                errorMessage('destination region node is required', true);
+            }
+
+            if (!isset($manifest['destination']['access'])) {
+                errorMessage('destination access node is required', true);
+            }
+
+            if (!isset($manifest['destination']['secret'])) {
+                errorMessage('destination secret node is required', true);
+            }
+
+            if (!isset($manifest['destination']['dir'])) {
+                errorMessage('destination dir node is required', true);
+            }
+
+            if (!isset($manifest['destination']['filename'])) {
+                errorMessage('destination filename node is required', true);
+            }
+
+            /**
+             * 
+             *  Download and process sql file
+             * 
+             */
             $result = $sourceClient->getObject([
                 'Bucket'     => $source['bucket'],
                 'Key'        => $path . DIRECTORY_SEPARATOR . $pair['sql'],
@@ -155,9 +225,6 @@ function processObfuscation(\Aws\S3\S3Client $sourceClient, array $pairedObjects
 
             progressMessage('✓ Freed import results');
 
-            $manifest = Yaml::parseFile(MANIFEST_FILE);
-
-            progressMessage('✓ Parsed manifest.yml');
 
             foreach($manifest['data'] as $database) {
                 foreach ($database as $tableName => $table) {
@@ -176,6 +243,8 @@ function processObfuscation(\Aws\S3\S3Client $sourceClient, array $pairedObjects
                 $dbConnectionDetails['password']
             );
             $dump->start(CLEANSED_DB_FILE);
+
+            progressMessage('✓ Dumped cleansed database');
 
             // create AWS client for pushing to destination
             $destinationClient = new \Aws\S3\S3Client([

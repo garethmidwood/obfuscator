@@ -129,30 +129,22 @@ filename: obfuscated.sql # destination only, defaults to obfuscated.sql
 
 #### Source Required Fields
 ```
+type
 bucket
 region
 access
 secret
-```
-
-#### Source Optional Fields
-```
-none
 ```
 
 #### Destination Required Fields
 ```
+type
+bucket
 access
 secret
-```
-
-#### Destination Optional Fields
-```
-dir # defaults to /
-
-# the following fields will be retrieved from the manifest.yml file, but fallbacks can be specified here
-bucket
 region
+dir
+filename
 ```
 
 
