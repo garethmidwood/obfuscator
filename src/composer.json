@@ -1,0 +1,7 @@
+{
+    "require": {
+        "php": "~7.0",
+        "symfony/yaml": "^3.4",
+        "aws/aws-sdk-php": "^3.61"
+    }
+}
