@@ -3,8 +3,10 @@
 include_once('./vendor/autoload.php');
 
 use Symfony\Component\Yaml\Yaml;
+use Ifsnop\Mysqldump as IMysqldump;
 
 define('DB_FILE', sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'sql.sql');
+define('CLEANSED_DB_FILE', sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'clean.sql');
 define('MANIFEST_FILE', sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'manifest.yml');
 define('TMP_DB_NAME', 'derek');
 
@@ -64,11 +66,11 @@ foreach($config['source'] as $source) {
 
     $aPairedS3Objects = s3Iterate($client, $source);
 
-    processObfuscation($client, $aPairedS3Objects, $source, $dbConnection);
+    processObfuscation($client, $aPairedS3Objects, $source, $dbConnection, $config['database']);
 }
 
-function s3Iterate(\Aws\S3\S3Client $s3client, array $source) {
-    $objects = $s3client->getIterator('ListObjects', array(
+function s3Iterate(\Aws\S3\S3Client $sourceClient, array $source) {
+    $objects = $sourceClient->getIterator('ListObjects', array(
         'Bucket' => $source['bucket']
     ));
 
@@ -87,7 +89,7 @@ function pairS3Objects(array $s3object, array &$pairedObjects) {
     $pairedObjects[dirname($s3object['Key'])][$ext] = basename($s3object['Key']);
 } 
 
-function processObfuscation(\Aws\S3\S3Client $s3client, array $pairedObjects, array $source, mysqli $dbConnection) {
+function processObfuscation(\Aws\S3\S3Client $sourceClient, array $pairedObjects, array $source, mysqli $dbConnection, array $dbConnectionDetails) {
 
     foreach($pairedObjects as $path => $pair) {
         if (!isset($pair['sql'])) {
@@ -103,7 +105,7 @@ function processObfuscation(\Aws\S3\S3Client $s3client, array $pairedObjects, ar
 
         try {
             // get the manifest
-            $result = $s3client->getObject([
+            $result = $sourceClient->getObject([
                 'Bucket'     => $source['bucket'],
                 'Key'        => $path . DIRECTORY_SEPARATOR . $pair['yml'],
                 'SaveAs'     => MANIFEST_FILE,
@@ -112,7 +114,7 @@ function processObfuscation(\Aws\S3\S3Client $s3client, array $pairedObjects, ar
             progressMessage('✓ Downloaded manifest file');
 
             // get the sql
-            $result = $s3client->getObject([
+            $result = $sourceClient->getObject([
                 'Bucket'     => $source['bucket'],
                 'Key'        => $path . DIRECTORY_SEPARATOR . $pair['sql'],
                 'SaveAs'     => DB_FILE,
@@ -141,7 +143,6 @@ function processObfuscation(\Aws\S3\S3Client $s3client, array $pairedObjects, ar
             progressMessage('✓ Imported DB dump');
 
             do {
-                /* store first result set */
                 if ($result = $dbConnection->store_result()) {
                     while ($row = $result->fetch_row()) {
                         printf("%s\n", $row[0]);
@@ -158,11 +159,52 @@ function processObfuscation(\Aws\S3\S3Client $s3client, array $pairedObjects, ar
 
             progressMessage('✓ Parsed manifest.yml');
 
-            var_dump($manifest);
+            foreach($manifest['data'] as $database) {
+                foreach ($database as $tableName => $table) {
+                    foreach($table as $obfuscationType => $fields) {
+                        obfuscateField($dbConnection, $tableName, $obfuscationType, $fields);
+                    }
 
+                    progressMessage('✓ Completed obfuscation of ' . $tableName);
+                }
+            }
+
+            // dump the DB file locally
+            $dump = new IMysqldump\Mysqldump(
+                'mysql:host=' . $dbConnectionDetails['host'] . ':' . $dbConnectionDetails['port'] . ';dbname=' . TMP_DB_NAME,
+                $dbConnectionDetails['user'],
+                $dbConnectionDetails['password']
+            );
+            $dump->start(CLEANSED_DB_FILE);
+
+            // create AWS client for pushing to destination
+            $destinationClient = new \Aws\S3\S3Client([
+                'region'  => $manifest['destination']['region'],
+                'version' => 'latest',
+                'credentials' => [
+                    'key'    => $manifest['destination']['access'],
+                    'secret' => $manifest['destination']['secret'],
+                ],
+            ]);
+
+            progressMessage('✓ Connected to destination');
+
+            // push the file to storage
+            $result = $destinationClient->putObject([
+                'Bucket'     => $manifest['destination']['bucket'],
+                'Key'        => $manifest['destination']['dir'] . DIRECTORY_SEPARATOR . $manifest['destination']['filename'],
+                'SourceFile' => CLEANSED_DB_FILE,
+            ]);
+
+            progressMessage('✓ Pushed cleansed DB to destination');
 
             // delete the manifest from S3, but not the DB dump
+            $result = $sourceClient->deleteObject([
+                'Bucket'     => $source['bucket'],
+                'Key'        => $path . DIRECTORY_SEPARATOR . $pair['yml']
+            ]);
 
+            progressMessage('✓ Deleted manifest from source');
 
         } catch(\Exception $e) {
             // raise error, but keep processing
@@ -200,9 +242,31 @@ function cleanUpFiles() {
 
 function cleanUpDatabase(mysqli $dbConnection) {
     progressMessage('✓ Cleaning up database');
-    if (!$dbConnection->query('DROP DATABASE ' . TMP_DB_NAME)) {
+    if (!$dbConnection->query('DROP DATABASE IF EXISTS ' . TMP_DB_NAME)) {
         errorMessage('DB Error message: ' . $dbConnection->error);
     }
+}
+
+function obfuscateField(mysqli $dbConnection, string $tableName, string $obfuscationType, array $fields) {
+    $fieldUpdates = [];
+
+    foreach($fields as $field) {
+        switch($obfuscationType) {
+            case 'email':
+                $fieldUpdates[] = "$field = concat(LEFT(UUID(), 8), '@example.com')";
+                break;
+            case 'string':
+            default:
+                $fieldUpdates[] = "$field = LEFT(UUID(), 8)";
+                break;
+        }
+    }
+
+    if (!$dbConnection->query('UPDATE ' . $tableName . ' set ' . implode(',', $fieldUpdates) . ' WHERE 1=1')) {
+        throw new \Exception('DB Error message: ' . $dbConnection->error);
+    }
+
+    progressMessage("✓ Obfuscated $obfuscationType fields in $tableName");
 }
 
 echo PHP_EOL;
