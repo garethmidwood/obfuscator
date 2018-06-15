@@ -8,7 +8,6 @@ use Ifsnop\Mysqldump as IMysqldump;
 define('DB_FILE', sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'sql.sql');
 define('CLEANSED_DB_FILE', sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'clean.sql');
 define('MANIFEST_FILE', sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'manifest.yml');
-define('TMP_DB_NAME', 'derek');
 
 // TODO: Move this into a config class that validates itself
 $config = Yaml::parseFile('obfuscate.yml');
@@ -126,6 +125,7 @@ function processObfuscation(\Aws\S3\S3Client $sourceClient, array $pairedObjects
         progressMessage('Processing ' . $path);
 
         try {
+            $databaseName = preg_replace('/[^A-Za-z0-9\-]/', '', $path);
             /**
              * 
              *  Download and parse manifest file
@@ -192,14 +192,16 @@ function processObfuscation(\Aws\S3\S3Client $sourceClient, array $pairedObjects
 
             progressMessage('✓ Downloaded sql file');
 
-            if (!$dbConnection->query('CREATE DATABASE ' . TMP_DB_NAME)) {
+            cleanUpDatabase($dbConnection, $databaseName);
+
+            if (!$dbConnection->query('CREATE DATABASE ' . $databaseName)) {
                 throw new \Exception('DB Error message: ' . $dbConnection->error);
             }
 
-            progressMessage('✓ Created database ' . TMP_DB_NAME);
+            progressMessage('✓ Created database ' . $databaseName);
 
-            if (!$dbConnection->select_db(TMP_DB_NAME)) {
-                throw new \Exception('DB Error message: Can\'t select database ' . TMP_DB_NAME);
+            if (!$dbConnection->select_db($databaseName)) {
+                throw new \Exception('DB Error message: Can\'t select database ' . $databaseName);
             }
 
             progressMessage('✓ Selected database');
@@ -238,7 +240,7 @@ function processObfuscation(\Aws\S3\S3Client $sourceClient, array $pairedObjects
 
             // dump the DB file locally
             $dump = new IMysqldump\Mysqldump(
-                'mysql:host=' . $dbConnectionDetails['host'] . ':' . $dbConnectionDetails['port'] . ';dbname=' . TMP_DB_NAME,
+                'mysql:host=' . $dbConnectionDetails['host'] . ':' . $dbConnectionDetails['port'] . ';dbname=' . $databaseName,
                 $dbConnectionDetails['user'],
                 $dbConnectionDetails['password']
             );
@@ -280,11 +282,11 @@ function processObfuscation(\Aws\S3\S3Client $sourceClient, array $pairedObjects
             errorMessage($e->getMessage());
         }
 
+        cleanUpFiles();
+        cleanUpDatabase($dbConnection, $databaseName);
+
         progressMessage('========================');
     }
-
-    cleanUpFiles();
-    cleanUpDatabase($dbConnection);
 }
 
 function progressMessage(string $message) {
@@ -309,11 +311,12 @@ function cleanUpFiles() {
     }
 }
 
-function cleanUpDatabase(mysqli $dbConnection) {
-    progressMessage('✓ Cleaning up database');
-    if (!$dbConnection->query('DROP DATABASE IF EXISTS ' . TMP_DB_NAME)) {
+function cleanUpDatabase(mysqli $dbConnection, $databaseName) {
+    if (!$dbConnection->query('DROP DATABASE IF EXISTS ' . $databaseName)) {
         errorMessage('DB Error message: ' . $dbConnection->error);
     }
+
+    progressMessage('✓ Removed database ' . $databaseName);
 }
 
 function obfuscateField(mysqli $dbConnection, string $tableName, string $obfuscationType, array $fields) {
