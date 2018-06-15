@@ -330,6 +330,9 @@ function obfuscateField(mysqli $dbConnection, string $tableName, string $obfusca
             case 'email':
                 $fieldUpdates[] = "$field = concat(LEFT(UUID(), 8), '@example.com')";
                 break;
+            case 'date':
+                $fieldUpdates[] = "$field = CURDATE()";
+                break;
             case 'string':
             default:
                 $fieldUpdates[] = "$field = LEFT(UUID(), 8)";
