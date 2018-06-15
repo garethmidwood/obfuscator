@@ -279,12 +279,12 @@ function processObfuscation(\Aws\S3\S3Client $sourceClient, array $pairedObjects
             // raise error, but keep processing
             errorMessage($e->getMessage());
         }
+
+        progressMessage('========================');
     }
 
     cleanUpFiles();
     cleanUpDatabase($dbConnection);
-
-    progressMessage('========================');
 }
 
 function progressMessage(string $message) {
