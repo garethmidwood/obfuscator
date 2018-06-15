@@ -242,7 +242,10 @@ function processObfuscation(\Aws\S3\S3Client $sourceClient, array $pairedObjects
             $dump = new IMysqldump\Mysqldump(
                 'mysql:host=' . $dbConnectionDetails['host'] . ':' . $dbConnectionDetails['port'] . ';dbname=' . $databaseName,
                 $dbConnectionDetails['user'],
-                $dbConnectionDetails['password']
+                $dbConnectionDetails['password'],
+                [
+                    'add-drop-table' => true
+                ]
             );
             $dump->start(CLEANSED_DB_FILE);
 
