@@ -206,6 +206,14 @@ function processObfuscation(\Aws\S3\S3Client $sourceClient, array $pairedObjects
 
             progressMessage('✓ Selected database');
 
+            $sql = 'SET FOREIGN_KEY_CHECKS=0;';
+
+            if (!$dbConnection->multi_query($sql)) {
+                throw new \Exception('DB Error message: ' . $dbConnection->error);
+            }
+
+            progressMessage('✓ Turned off foreign key checks');
+
             $sql = file_get_contents(DB_FILE);
 
             if (!$dbConnection->multi_query($sql)) {
