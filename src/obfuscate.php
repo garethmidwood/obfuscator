@@ -50,6 +50,10 @@ if ($dbConnection->connect_errno) {
     errorMessage('Database connection failed: ' . $dbConnection->connect_error, true);
 }
 
+if (!$dbConnection->query('SET @@global.max_allowed_packet = 524288000')) {
+    errorMessage('Could not set max_allowed_packet on MySQL server', true);
+}
+
 
 // TODO: Move this into a task runner class
 foreach($config['source'] as $source) {
@@ -336,23 +340,26 @@ function obfuscateField(mysqli $dbConnection, string $tableName, string $obfusca
     foreach($fields as $field) {
         switch($obfuscationType) {
             case 'email':
-                $fieldUpdates[] = "$field = concat(LEFT(UUID(), 8), '@example.com')";
+                $fieldUpdates[] = "`$field` = concat(LEFT(UUID(), 8), '@example.com')";
                 break;
             case 'date':
-                $fieldUpdates[] = "$field = CURDATE()";
+                $fieldUpdates[] = "`$field` = CURDATE()";
                 break;
             case 'string':
             default:
-                $fieldUpdates[] = "$field = LEFT(UUID(), 8)";
+                $fieldUpdates[] = "`$field` = LEFT(UUID(), 8)";
                 break;
         }
     }
 
-    if (!$dbConnection->query('UPDATE ' . $tableName . ' set ' . implode(',', $fieldUpdates) . ' WHERE 1=1')) {
-        throw new \Exception('DB Error message: ' . $dbConnection->error);
+    $query = 'UPDATE ' . $tableName . ' set ' . implode(',', $fieldUpdates) . ' WHERE 1=1';
+
+    if (!$dbConnection->query($query)) {
+        throw new \Exception('DB Error message: ' . $dbConnection->error . PHP_EOL . 'Query with error: ' . $query);
     }
 
     progressMessage("✓ Obfuscated $obfuscationType fields in $tableName");
 }
 
 echo PHP_EOL;
+exit;
