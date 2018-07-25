@@ -342,7 +342,7 @@ function obfuscateField(mysqli $dbConnection, string $tableName, string $obfusca
     foreach($fields as $field) {
         switch($obfuscationType) {
             case 'email':
-                $fieldUpdates[] = "`$field` = concat(LEFT(UUID(), 4), '@example.com')";
+                $fieldUpdates[] = "`$field` = concat(LEFT(UUID(), 8), '@example.com')";
                 break;
             case 'date':
                 $fieldUpdates[] = "`$field` = CURDATE()";
