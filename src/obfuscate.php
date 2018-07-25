@@ -135,6 +135,7 @@ function processObfuscation(\Aws\S3\S3Client $sourceClient, array $pairedObjects
              *  Download and parse manifest file
              * 
              */
+            progressMessage('• Downloading manifest file');
             $result = $sourceClient->getObject([
                 'Bucket'     => $source['bucket'],
                 'Key'        => $path . DIRECTORY_SEPARATOR . $pair['yml'],
@@ -188,6 +189,7 @@ function processObfuscation(\Aws\S3\S3Client $sourceClient, array $pairedObjects
              *  Download and process sql file
              * 
              */
+            progressMessage('• Downloading sql file');
             $result = $sourceClient->getObject([
                 'Bucket'     => $source['bucket'],
                 'Key'        => $path . DIRECTORY_SEPARATOR . $pair['sql'],
