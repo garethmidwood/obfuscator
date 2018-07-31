@@ -8,7 +8,7 @@ The original database will be removed _locally_, the file will remain in the ini
 
 
 ## obfuscate.yml - Tool Configuration
-Your tool requires configuration, this is an `obfuscate.yml` file that should be added in the same directory as this README.
+Your tool requires configuration, this is an `obfuscate.yml` file that should be added in the same directory as the obfuscate.php script.
 
 This tool can be configured to pull from multiple `source` locations. The credentials used should give permission to read from the location and to delete the manifest.yml file once processing is completed.
 
@@ -30,7 +30,7 @@ database:
  password: dbpassword
  host: dbhost
  port: dbport
-dryrun: true # optional - echo's SQL updates rather than running them
+dryrun: true # optional - echo SQL updates rather than running them
 ```
 
 #### obfuscate.yml - Example
