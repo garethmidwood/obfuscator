@@ -30,6 +30,7 @@ database:
  password: dbpassword
  host: dbhost
  port: dbport
+dryrun: true # optional - echo's SQL updates rather than running them
 ```
 
 #### obfuscate.yml - Example
@@ -102,12 +103,14 @@ data:
 
 ## manifest.yml - Obfuscation Field Types
 ```
-string
-email
-phone number
+email     # sets to a random 8 character string @example.com
+date      # sets to current date
+string    # sets to a random 4 character string
+float     # sets to 1.0
+bigint    # sets to 12345
+int       # sets to 10
+phone     # sets to 01234567890
 ```
-
-
 
 
 ## Location types
@@ -134,6 +137,11 @@ bucket
 region
 access
 secret
+```
+
+#### Source Optional Fields
+```
+directory     # directory to search in (recursive)
 ```
 
 #### Destination Required Fields
