@@ -40,6 +40,15 @@ if (!isset($config['database']['port'])) {
     exit('database port node is required');
 }
 
+if (isset($config['dryrun']) && $config['dryrun'] == true) {
+    progressMessage('========================');
+    progressMessage('======== DRY RUN =======');
+    progressMessage('========================');
+    define('DRY_RUN', true);
+} else {
+    define('DRY_RUN', false);
+}
+
 $dbConnection = new mysqli(
         $config['database']['host'] . ':' . $config['database']['port'],
         $config['database']['user'],
@@ -93,9 +102,15 @@ foreach($config['source'] as $source) {
 }
 
 function s3Iterate(\Aws\S3\S3Client $sourceClient, array $source) {
-    $objects = $sourceClient->getIterator('ListObjects', array(
+    $params = array(
         'Bucket' => $source['bucket']
-    ));
+    );
+
+    if (isset($source['directory'])) {
+        $params['Prefix'] = $source['directory'];
+    }
+
+    $objects = $sourceClient->getIterator('ListObjects', $params);
 
     $pairedObjects = [];
 
@@ -182,6 +197,19 @@ function processObfuscation(\Aws\S3\S3Client $sourceClient, array $pairedObjects
 
             if (!isset($manifest['destination']['filename'])) {
                 errorMessage('destination filename node is required', true);
+            }
+
+            if (DRY_RUN) {
+                foreach($manifest['data'] as $database) {
+                    foreach ($database as $tableName => $table) {
+                        foreach($table as $obfuscationType => $fields) {
+                            obfuscateField($dbConnection, $tableName, $obfuscationType, $fields, DRY_RUN);
+                        }
+
+                        progressMessage('✓ Completed obfuscation of ' . $tableName);
+                    }
+                }
+                continue;
             }
 
             /**
@@ -336,7 +364,7 @@ function cleanUpDatabase(mysqli $dbConnection, $databaseName) {
     progressMessage('✓ Removed database ' . $databaseName);
 }
 
-function obfuscateField(mysqli $dbConnection, string $tableName, string $obfuscationType, array $fields) {
+function obfuscateField(mysqli $dbConnection, string $tableName, string $obfuscationType, array $fields, bool $dryRun = false) {
     $fieldUpdates = [];
 
     foreach($fields as $field) {
@@ -348,16 +376,37 @@ function obfuscateField(mysqli $dbConnection, string $tableName, string $obfusca
                 $fieldUpdates[] = "`$field` = CURDATE()";
                 break;
             case 'string':
-            default:
                 $fieldUpdates[] = "`$field` = LEFT(UUID(), 4)";
+                break;
+            case 'float':
+                $fieldUpdates[] = "`$field` = '1.0'";
+                break;
+            case 'bigint':
+                $fieldUpdates[] = "`$field` = '12345'";
+                break;
+            case 'int':
+                $fieldUpdates[] = "`$field` = '10'";
+                break;
+            case 'phone':
+                $fieldUpdates[] = "`$field` = '01234567890'";
+                break;
+            case 'date':
+                $fieldUpdates[] = "`$field` = '01/01/1970'";
+                break;
+            default:
+                progressMessage("✓ Unrecognised field type $obfuscationType for `$field` - skipping");
                 break;
         }
     }
 
     $query = 'UPDATE ' . $tableName . ' set ' . implode(',', $fieldUpdates) . ' WHERE 1=1';
 
-    if (!$dbConnection->query($query)) {
-        throw new \Exception('DB Error message: ' . $dbConnection->error . PHP_EOL . 'Query with error: ' . $query);
+    if ($dryRun) {
+        progressMessage("✓ DRY RUN: $query");
+    } else {
+        if (!$dbConnection->query($query)) {
+            throw new \Exception('DB Error message: ' . $dbConnection->error . PHP_EOL . 'Query with error: ' . $query);
+        }
     }
 
     progressMessage("✓ Obfuscated $obfuscationType fields in $tableName");
