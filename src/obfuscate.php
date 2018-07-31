@@ -390,9 +390,6 @@ function obfuscateField(mysqli $dbConnection, string $tableName, string $obfusca
             case 'phone':
                 $fieldUpdates[] = "`$field` = '01234567890'";
                 break;
-            case 'date':
-                $fieldUpdates[] = "`$field` = '01/01/1970'";
-                break;
             default:
                 progressMessage("✓ Unrecognised field type $obfuscationType for `$field` - skipping");
                 break;
