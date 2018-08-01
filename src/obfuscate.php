@@ -376,7 +376,7 @@ function obfuscateField(mysqli $dbConnection, string $tableName, string $obfusca
                 $fieldUpdates[] = "`$field` = CURDATE()";
                 break;
             case 'string':
-                $fieldUpdates[] = "`$field` = LEFT(UUID(), 4)";
+                $fieldUpdates[] = "`$field` = LEFT(UUID(), 10)";
                 break;
             case 'float':
                 $fieldUpdates[] = "`$field` = '1.0'";
