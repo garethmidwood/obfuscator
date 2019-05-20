@@ -61,7 +61,7 @@ if ($dbConnection->connect_errno) {
     errorMessage('Database connection failed: ' . $dbConnection->connect_error, true);
 }
 
-if (!$dbConnection->query('SET @@global.max_allowed_packet = 524288000')) {
+if (!$dbConnection->multi_query('SET @@global.max_allowed_packet = 524288000')) {
     errorMessage('Could not set max_allowed_packet on MySQL server', true);
 }
 
@@ -230,7 +230,7 @@ function processObfuscation(\Aws\S3\S3Client $sourceClient, array $pairedObjects
 
             cleanUpDatabase($dbConnection, $databaseName);
 
-            if (!$dbConnection->query('CREATE DATABASE ' . $databaseName)) {
+            if (!$dbConnection->multi_query('CREATE DATABASE ' . $databaseName)) {
                 throw new \Exception('DB Error message: ' . $dbConnection->error);
             }
 
@@ -258,6 +258,8 @@ function processObfuscation(\Aws\S3\S3Client $sourceClient, array $pairedObjects
             exec("split --bytes=200M " . DB_FILE . " " . STORAGE_PARTS_DIR);
 
             $dbPartFiles = array_diff(scandir(STORAGE_PARTS_DIR), array('..', '.'));
+
+            progressMessage('✓ DB dump has been split into ' . count($dbPartFiles) . ' parts');
 
             foreach ($dbPartFiles as $filename) {
                 $sql = file_get_contents(STORAGE_PARTS_DIR . $filename);
@@ -382,7 +384,7 @@ function cleanUpFiles() {
 }
 
 function cleanUpDatabase(mysqli $dbConnection, $databaseName) {
-    if (!$dbConnection->query('DROP DATABASE IF EXISTS ' . $databaseName)) {
+    if (!$dbConnection->multi_query('DROP DATABASE IF EXISTS ' . $databaseName)) {
         errorMessage('DB Error message: ' . $dbConnection->error);
     }
 
@@ -426,7 +428,7 @@ function obfuscateField(mysqli $dbConnection, string $tableName, string $obfusca
     if ($dryRun) {
         progressMessage("✓ DRY RUN: $query");
     } else {
-        if (!$dbConnection->query($query)) {
+        if (!$dbConnection->multi_query($query)) {
             throw new \Exception('DB Error message: ' . $dbConnection->error . PHP_EOL . 'Query with error: ' . $query);
         }
     }
