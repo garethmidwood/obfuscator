@@ -5,9 +5,11 @@ include_once('./vendor/autoload.php');
 use Symfony\Component\Yaml\Yaml;
 use Ifsnop\Mysqldump as IMysqldump;
 
-define('DB_FILE', sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'sql.sql');
-define('CLEANSED_DB_FILE', sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'clean.sql');
-define('MANIFEST_FILE', sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'manifest.yml');
+define('STORAGE_DIR', sys_get_temp_dir() . DIRECTORY_SEPARATOR);
+define('STORAGE_PARTS_DIR', STORAGE_DIR . 'parts' . DIRECTORY_SEPARATOR);
+define('DB_FILE', STORAGE_DIR . 'sql.sql');
+define('CLEANSED_DB_FILE', STORAGE_DIR . 'clean.sql');
+define('MANIFEST_FILE', STORAGE_DIR . 'manifest.yml');
 
 // TODO: Move this into a config class that validates itself
 $config = Yaml::parseFile('obfuscate.yml');
@@ -248,13 +250,22 @@ function processObfuscation(\Aws\S3\S3Client $sourceClient, array $pairedObjects
 
             progressMessage('✓ Turned off foreign key checks');
 
-            $sql = file_get_contents(DB_FILE);
 
-            if (!$dbConnection->multi_query($sql)) {
-                throw new \Exception('DB Error message: ' . $dbConnection->error);
+            // split file into smaller parts so we can avoid importing a huge file
+            exec("split --bytes=500M " . DB_FILE . " " . STORAGE_PARTS_DIR);
+
+            foreach (glob(STORAGE_PARTS_DIR . "*.sql") as $filename) {
+                $sql = file_get_contents($filename);
+
+                if (!$dbConnection->multi_query($sql)) {
+                    throw new \Exception('DB Error message: ' . $dbConnection->error);
+                }
+
+                progressMessage('✓ Imported DB part ' . $filename);
             }
 
             progressMessage('✓ Imported DB dump');
+
 
             do {
                 if ($result = $dbConnection->store_result()) {
@@ -348,11 +359,20 @@ function errorMessage(string $message, $die = false) {
 
 function cleanUpFiles() {
     progressMessage('✓ Cleaning up files');
-    if (file_exists(DB_FILE)) {
-        unlink(DB_FILE);
+
+    foreach (glob(STORAGE_DIR . "*.sql") as $filename) {
+        unlink($filename);
+        progressMessage('✓ Removed DB file ' . $filename);
     }
+
+    foreach (glob(STORAGE_PARTS_DIR . "*.sql") as $filename) {
+        unlink($filename);
+        progressMessage('✓ Removed DB part ' . $filename);
+    }
+
     if (file_exists(MANIFEST_FILE)) {
         unlink(MANIFEST_FILE);
+        progressMessage('✓ Removed manifest');
     }
 }
 
