@@ -252,10 +252,15 @@ function processObfuscation(\Aws\S3\S3Client $sourceClient, array $pairedObjects
 
 
             // split file into smaller parts so we can avoid importing a huge file
+            if (!is_dir(STORAGE_PARTS_DIR)) {
+                mkdir(STORAGE_PARTS_DIR);
+            }
             exec("split --bytes=500M " . DB_FILE . " " . STORAGE_PARTS_DIR);
 
-            foreach (glob(STORAGE_PARTS_DIR . "*.sql") as $filename) {
-                $sql = file_get_contents($filename);
+            $dbPartFiles = array_diff(scandir(STORAGE_PARTS_DIR), array('..', '.'));
+
+            foreach ($dbPartFiles as $filename) {
+                $sql = file_get_contents(STORAGE_PARTS_DIR . $filename);
 
                 if (!$dbConnection->multi_query($sql)) {
                     throw new \Exception('DB Error message: ' . $dbConnection->error);
