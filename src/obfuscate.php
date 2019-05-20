@@ -255,7 +255,7 @@ function processObfuscation(\Aws\S3\S3Client $sourceClient, array $pairedObjects
             if (!is_dir(STORAGE_PARTS_DIR)) {
                 mkdir(STORAGE_PARTS_DIR);
             }
-            exec("split --bytes=500M " . DB_FILE . " " . STORAGE_PARTS_DIR);
+            exec("split --bytes=200M " . DB_FILE . " " . STORAGE_PARTS_DIR);
 
             $dbPartFiles = array_diff(scandir(STORAGE_PARTS_DIR), array('..', '.'));
 
