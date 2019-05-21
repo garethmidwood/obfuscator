@@ -276,7 +276,7 @@ function processObfuscation(\Aws\S3\S3Client $sourceClient, array $pairedObjects
             if (!is_dir(STORAGE_PARTS_DIR)) {
                 mkdir(STORAGE_PARTS_DIR);
             }
-            exec("split --lines=500 " . STORAGE_DIR . SQL_DATA_FILE . " " . STORAGE_PARTS_DIR);
+            exec("split --lines=1000 " . STORAGE_DIR . SQL_DATA_FILE . " " . STORAGE_PARTS_DIR);
 
             $dbPartFiles = array_diff(scandir(STORAGE_PARTS_DIR), array('..', '.'));
 
@@ -285,24 +285,13 @@ function processObfuscation(\Aws\S3\S3Client $sourceClient, array $pairedObjects
             foreach ($dbPartFiles as $filename) {
                 $sql = file_get_contents(STORAGE_PARTS_DIR . $filename);
 
+                while ($dbConnection->next_result()) {;} // flush multi_queries
+
                 if (!$dbConnection->multi_query($sql)) {
                     throw new \Exception('DB Error message: ' . $dbConnection->error . ' when importing db part ' . $filename);
                 }
 
                 progressMessage('✓ Imported DB part ' . $filename);
-
-                do {
-                    if ($result = $dbConnection->store_result()) {
-                        while ($row = $result->fetch_row()) {
-                            printf("%s\n", $row[0]);    
-                        }
-                        $result->free();
-                    }
-
-                    $dbConnection->next_result();
-                } while ($dbConnection->more_results());
-
-                progressMessage('✓ Freed import results');
             }
 
             progressMessage('✓ Imported DB dump');
