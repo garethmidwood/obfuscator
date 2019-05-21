@@ -406,6 +406,8 @@ function processObfuscation(\Aws\S3\S3Client $sourceClient, array $pairedObjects
             errorMessage($e->getMessage());
         }
 
+        while ($dbConnection->next_result()) {;} // flush multi_queries
+
         cleanUpFiles();
         cleanUpDatabase($dbConnection, $databaseName);
 
