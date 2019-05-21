@@ -7,9 +7,10 @@ use Ifsnop\Mysqldump as IMysqldump;
 
 define('STORAGE_DIR', sys_get_temp_dir() . DIRECTORY_SEPARATOR);
 define('STORAGE_PARTS_DIR', STORAGE_DIR . 'parts' . DIRECTORY_SEPARATOR);
-define('DB_FILE', STORAGE_DIR . 'sql.sql');
 define('CLEANSED_DB_FILE', STORAGE_DIR . 'clean.sql');
 define('MANIFEST_FILE', STORAGE_DIR . 'manifest.yml');
+define('SQL_STRUCTURE_FILE', '03_structure_obfuscated.sql');
+define('SQL_DATA_FILE', '04_data_obfuscated.sql');
 
 // TODO: Move this into a config class that validates itself
 $config = Yaml::parseFile('obfuscate.yml');
@@ -198,8 +199,12 @@ function processObfuscation(\Aws\S3\S3Client $sourceClient, array $pairedObjects
                 errorMessage('destination dir node is required', true);
             }
 
-            if (!isset($manifest['destination']['filename'])) {
-                errorMessage('destination filename node is required', true);
+            if (!isset($manifest['destination']['structure_filename'])) {
+                errorMessage('destination structure_filename node is required', true);
+            }
+
+            if (!isset($manifest['destination']['data_filename'])) {
+                errorMessage('destination data_filename node is required', true);
             }
 
             if (DRY_RUN) {
@@ -220,14 +225,20 @@ function processObfuscation(\Aws\S3\S3Client $sourceClient, array $pairedObjects
              *  Download and process sql file
              * 
              */
-            progressMessage('• Downloading sql file');
-            $result = $sourceClient->getObject([
+            progressMessage('• Downloading sql files');
+            $sourceClient->getObject([
                 'Bucket'     => $source['bucket'],
-                'Key'        => $path . DIRECTORY_SEPARATOR . $pair['sql'],
-                'SaveAs'     => DB_FILE,
+                'Key'        => $path . DIRECTORY_SEPARATOR . SQL_STRUCTURE_FILE,
+                'SaveAs'     => STORAGE_DIR . SQL_STRUCTURE_FILE
             ]);
 
-            progressMessage('✓ Downloaded sql file');
+            $sourceClient->getObject([
+                'Bucket'     => $source['bucket'],
+                'Key'        => $path . DIRECTORY_SEPARATOR . SQL_DATA_FILE,
+                'SaveAs'     => STORAGE_DIR . SQL_DATA_FILE
+            ]);
+
+            progressMessage('✓ Downloaded sql files');
 
             cleanUpDatabase($dbConnection, $databaseName);
 
@@ -253,11 +264,19 @@ function processObfuscation(\Aws\S3\S3Client $sourceClient, array $pairedObjects
 
             progressMessage('✓ Turned off foreign key checks');
 
+
+            $sql = file_get_contents(STORAGE_DIR . SQL_STRUCTURE_FILE);
+            if (!$dbConnection->multi_query($sql)) {
+                throw new \Exception('DB Error message: ' . $dbConnection->error . ' (creating table structure)');
+            }
+
+            progressMessage('✓ Created DB structure'); 
+
             // split file into smaller parts so we can avoid importing a huge file
             if (!is_dir(STORAGE_PARTS_DIR)) {
                 mkdir(STORAGE_PARTS_DIR);
             }
-            exec("split --bytes=200M " . DB_FILE . " " . STORAGE_PARTS_DIR);
+            exec("split --lines=500 " . STORAGE_DIR . SQL_DATA_FILE . " " . STORAGE_PARTS_DIR);
 
             $dbPartFiles = array_diff(scandir(STORAGE_PARTS_DIR), array('..', '.'));
 
@@ -299,18 +318,9 @@ function processObfuscation(\Aws\S3\S3Client $sourceClient, array $pairedObjects
                 }
             }
 
-            // dump the DB file locally
-            $dump = new IMysqldump\Mysqldump(
-                'mysql:host=' . $dbConnectionDetails['host'] . ':' . $dbConnectionDetails['port'] . ';dbname=' . $databaseName,
-                $dbConnectionDetails['user'],
-                $dbConnectionDetails['password'],
-                [
-                    'add-drop-table' => true
-                ]
-            );
-            $dump->start(CLEANSED_DB_FILE);
 
-            progressMessage('✓ Dumped cleansed database');
+
+
 
             // create AWS client for pushing to destination
             $destinationClient = new \Aws\S3\S3Client([
@@ -324,16 +334,63 @@ function processObfuscation(\Aws\S3\S3Client $sourceClient, array $pairedObjects
 
             progressMessage('✓ Connected to destination');
 
-            // push the file to storage
+
+
+
+
+            // dump the DB data file locally
+            $dump = new IMysqldump\Mysqldump(
+                'mysql:host=' . $dbConnectionDetails['host'] . ':' . $dbConnectionDetails['port'] . ';dbname=' . $databaseName,
+                $dbConnectionDetails['user'],
+                $dbConnectionDetails['password'],
+                [
+                    'add-drop-table' => true,
+                    'no-create-info' => true
+                ]
+            );
+            $dump->start(CLEANSED_DB_FILE);
+
+            progressMessage('✓ Dumped cleansed database');
+
+            // push the data file to storage
             $result = $destinationClient->putObject([
                 'Bucket'     => $manifest['destination']['bucket'],
-                'Key'        => $manifest['destination']['dir'] . DIRECTORY_SEPARATOR . $manifest['destination']['filename'],
+                'Key'        => $manifest['destination']['dir'] . DIRECTORY_SEPARATOR . $manifest['destination']['data_filename'],
                 'SourceFile' => CLEANSED_DB_FILE,
+            ]);
+
+            progressMessage('✓ Pushed cleansed data DB to destination');
+
+            // push the structure file to storage
+            $result = $destinationClient->putObject([
+                'Bucket'     => $manifest['destination']['bucket'],
+                'Key'        => $manifest['destination']['dir'] . DIRECTORY_SEPARATOR . $manifest['destination']['structure_filename'],
+                'SourceFile' => STORAGE_DIR . SQL_STRUCTURE_FILE,
             ]);
 
             progressMessage('✓ Pushed cleansed DB to destination');
 
-            // delete the manifest from S3, but not the DB dump
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            // delete the manifest from S3, but not the DB dumps
             $result = $sourceClient->deleteObject([
                 'Bucket'     => $source['bucket'],
                 'Key'        => $path . DIRECTORY_SEPARATOR . $pair['yml']
