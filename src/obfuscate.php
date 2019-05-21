@@ -62,9 +62,10 @@ if ($dbConnection->connect_errno) {
 }
 
 if (!$dbConnection->multi_query('SET @@global.max_allowed_packet = 524288000')) {
-    errorMessage('Could not set max_allowed_packet on MySQL server', true);
+    errorMessage('Could not set max_allowed_packet on MySQL server: ' . $dbConnection->error, true);
 }
 
+progressMessage('✓ Set max_allowed_packet');
 
 // TODO: Move this into a task runner class
 foreach($config['source'] as $source) {
@@ -252,7 +253,6 @@ function processObfuscation(\Aws\S3\S3Client $sourceClient, array $pairedObjects
 
             progressMessage('✓ Turned off foreign key checks');
 
-
             // split file into smaller parts so we can avoid importing a huge file
             if (!is_dir(STORAGE_PARTS_DIR)) {
                 mkdir(STORAGE_PARTS_DIR);
@@ -271,23 +271,22 @@ function processObfuscation(\Aws\S3\S3Client $sourceClient, array $pairedObjects
                 }
 
                 progressMessage('✓ Imported DB part ' . $filename);
+
+                do {
+                    if ($result = $dbConnection->store_result()) {
+                        while ($row = $result->fetch_row()) {
+                            printf("%s\n", $row[0]);    
+                        }
+                        $result->free();
+                    }
+
+                    $dbConnection->next_result();
+                } while ($dbConnection->more_results());
+
+                progressMessage('✓ Freed import results');
             }
 
             progressMessage('✓ Imported DB dump');
-
-
-            do {
-                if ($result = $dbConnection->store_result()) {
-                    while ($row = $result->fetch_row()) {
-                        printf("%s\n", $row[0]);
-                    }
-                    $result->free();
-                }
-
-                $dbConnection->next_result();
-            } while ($dbConnection->more_results());
-
-            progressMessage('✓ Freed import results');
 
 
             foreach($manifest['data'] as $database) {
