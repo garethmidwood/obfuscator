@@ -62,6 +62,8 @@ if ($dbConnection->connect_errno) {
     errorMessage('Database connection failed: ' . $dbConnection->connect_error, true);
 }
 
+while ($dbConnection->next_result()) {;} // flush multi_queries
+
 if (!$dbConnection->multi_query('SET @@global.max_allowed_packet = 524288000')) {
     errorMessage('Could not set max_allowed_packet on MySQL server: ' . $dbConnection->error, true);
 }
@@ -143,6 +145,8 @@ function processObfuscation(\Aws\S3\S3Client $sourceClient, array $pairedObjects
             errorMessage("✗ Skipping $path as there is no yml file");
             continue;
         }
+
+        cleanUpFiles();
 
         progressMessage('========================');
         progressMessage('Processing ' . $path);
@@ -242,6 +246,8 @@ function processObfuscation(\Aws\S3\S3Client $sourceClient, array $pairedObjects
 
             cleanUpDatabase($dbConnection, $databaseName);
 
+            while ($dbConnection->next_result()) {;} // flush multi_queries
+
             if (!$dbConnection->multi_query('CREATE DATABASE ' . $databaseName)) {
                 throw new \Exception(
                     'DB Error message: ' . $dbConnection->error . ' (creating database ' . $databaseName . ')'
@@ -256,6 +262,8 @@ function processObfuscation(\Aws\S3\S3Client $sourceClient, array $pairedObjects
 
             progressMessage('✓ Selected database');
 
+            while ($dbConnection->next_result()) {;} // flush multi_queries
+
             $sql = 'SET FOREIGN_KEY_CHECKS=0;';
 
             if (!$dbConnection->multi_query($sql)) {
@@ -264,6 +272,7 @@ function processObfuscation(\Aws\S3\S3Client $sourceClient, array $pairedObjects
 
             progressMessage('✓ Turned off foreign key checks');
 
+            while ($dbConnection->next_result()) {;} // flush multi_queries
 
             $sql = file_get_contents(STORAGE_DIR . SQL_STRUCTURE_FILE);
             if (!$dbConnection->multi_query($sql)) {
@@ -431,6 +440,8 @@ function cleanUpFiles() {
 }
 
 function cleanUpDatabase(mysqli $dbConnection, $databaseName) {
+    while ($dbConnection->next_result()) {;} // flush multi_queries
+
     if (!$dbConnection->multi_query('DROP DATABASE IF EXISTS ' . $databaseName)) {
         errorMessage('DB Error message: ' . $dbConnection->error . ' when dropping db ' . $databaseName);
     }
@@ -475,6 +486,8 @@ function obfuscateField(mysqli $dbConnection, string $tableName, string $obfusca
     if ($dryRun) {
         progressMessage("✓ DRY RUN: $query");
     } else {
+        while ($dbConnection->next_result()) {;} // flush multi_queries
+
         if (!$dbConnection->multi_query($query)) {
             throw new \Exception('DB Error message: ' . $dbConnection->error . PHP_EOL . 'Query with error: ' . $query);
         }
