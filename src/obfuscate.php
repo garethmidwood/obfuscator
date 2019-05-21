@@ -231,7 +231,9 @@ function processObfuscation(\Aws\S3\S3Client $sourceClient, array $pairedObjects
             cleanUpDatabase($dbConnection, $databaseName);
 
             if (!$dbConnection->multi_query('CREATE DATABASE ' . $databaseName)) {
-                throw new \Exception('DB Error message: ' . $dbConnection->error);
+                throw new \Exception(
+                    'DB Error message: ' . $dbConnection->error . ' (creating database ' . $databaseName . ')'
+                );
             }
 
             progressMessage('✓ Created database ' . $databaseName);
@@ -245,7 +247,7 @@ function processObfuscation(\Aws\S3\S3Client $sourceClient, array $pairedObjects
             $sql = 'SET FOREIGN_KEY_CHECKS=0;';
 
             if (!$dbConnection->multi_query($sql)) {
-                throw new \Exception('DB Error message: ' . $dbConnection->error);
+                throw new \Exception('DB Error message: ' . $dbConnection->error . ' (' . $sql . ')');
             }
 
             progressMessage('✓ Turned off foreign key checks');
@@ -265,7 +267,7 @@ function processObfuscation(\Aws\S3\S3Client $sourceClient, array $pairedObjects
                 $sql = file_get_contents(STORAGE_PARTS_DIR . $filename);
 
                 if (!$dbConnection->multi_query($sql)) {
-                    throw new \Exception('DB Error message: ' . $dbConnection->error);
+                    throw new \Exception('DB Error message: ' . $dbConnection->error . ' when importing db part ' . $filename);
                 }
 
                 progressMessage('✓ Imported DB part ' . $filename);
@@ -385,7 +387,7 @@ function cleanUpFiles() {
 
 function cleanUpDatabase(mysqli $dbConnection, $databaseName) {
     if (!$dbConnection->multi_query('DROP DATABASE IF EXISTS ' . $databaseName)) {
-        errorMessage('DB Error message: ' . $dbConnection->error);
+        errorMessage('DB Error message: ' . $dbConnection->error . ' when dropping db ' . $databaseName);
     }
 
     progressMessage('✓ Removed database ' . $databaseName);
