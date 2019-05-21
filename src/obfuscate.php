@@ -5,12 +5,20 @@ include_once('./vendor/autoload.php');
 use Symfony\Component\Yaml\Yaml;
 use Ifsnop\Mysqldump as IMysqldump;
 
-define('STORAGE_DIR', sys_get_temp_dir() . DIRECTORY_SEPARATOR);
+define('STORAGE_DIR', sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'obfuscation' . DIRECTORY_SEPARATOR);
 define('STORAGE_PARTS_DIR', STORAGE_DIR . 'parts' . DIRECTORY_SEPARATOR);
 define('CLEANSED_DB_FILE', STORAGE_DIR . 'clean.sql');
 define('MANIFEST_FILE', STORAGE_DIR . 'manifest.yml');
 define('SQL_STRUCTURE_FILE', '03_structure_obfuscated.sql');
 define('SQL_DATA_FILE', '04_data_obfuscated.sql');
+
+if (!is_dir(STORAGE_DIR)) {
+    mkdir(STORAGE_DIR);
+}
+
+if (!is_dir(STORAGE_PARTS_DIR)) {
+    mkdir(STORAGE_PARTS_DIR);
+}
 
 // TODO: Move this into a config class that validates itself
 $config = Yaml::parseFile('obfuscate.yml');
@@ -282,9 +290,6 @@ function processObfuscation(\Aws\S3\S3Client $sourceClient, array $pairedObjects
             progressMessage('✓ Created DB structure'); 
 
             // split file into smaller parts so we can avoid importing a huge file
-            if (!is_dir(STORAGE_PARTS_DIR)) {
-                mkdir(STORAGE_PARTS_DIR);
-            }
             exec("split --lines=1000 " . STORAGE_DIR . SQL_DATA_FILE . " " . STORAGE_PARTS_DIR);
 
             $dbPartFiles = array_diff(scandir(STORAGE_PARTS_DIR), array('..', '.'));
