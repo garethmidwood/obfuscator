@@ -4,7 +4,7 @@ class Logger
 {
     public function errorMessage(string $message, $die = false)
     {
-        echo "✗ $message" . PHP_EOL;
+        echo "   ✗ $message" . PHP_EOL;
 
         if ($die) {
             exit();

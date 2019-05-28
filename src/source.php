@@ -24,12 +24,12 @@ class Source
     /**
      * @var array
      */
-    private $sqlFiles = [];
+    private $sourceSqlFiles = [];
 
     /**
      * @var string
      */
-    private $manifestFile;
+    private $sourceManifestFile;
 
     /**
      * @var Logger
@@ -40,7 +40,7 @@ class Source
      * @var string
      */
     private $storageDir;
-    private $partsDir = 'parts';
+    private $partsDir = 'parts/';
 
     /**
      * @var mysqli
@@ -157,9 +157,9 @@ class Source
             $filename = $pathinfo['dirname'] . DIRECTORY_SEPARATOR . $pathinfo['basename'];
 
             if ($pathinfo['basename'] == self::MANIFEST_FILE) {
-                $this->manifestFile = $filename;
+                $this->sourceManifestFile = $filename;
             } elseif ($pathinfo['extension'] == 'sql') {
-                $this->sqlFiles[] = $filename;
+                $this->sourceSqlFiles[] = $filename;
             } else {
                 $this->logger->errorMessage('unrecognised file: ' . $pathinfo['basename']);
             }
@@ -173,13 +173,13 @@ class Source
     private function runPreObfuscationChecks() 
     {   
         // check source files exist
-        if (!count($this->sqlFiles)) {
+        if (!count($this->sourceSqlFiles)) {
             $this->logger->errorMessage('no sql file');
 
             return false;
         }
 
-        if (!isset($this->manifestFile)) {
+        if (!isset($this->sourceManifestFile)) {
             $this->logger->errorMessage('no manifest.yml file');
 
             return false;
@@ -278,11 +278,11 @@ class Source
      */
     private function downloadManifestFile()
     {
-        $this->logger->progressMessage('Downloading manifest file ' . $this->manifestFile);
+        $this->logger->progressMessage('Downloading manifest file ' . $this->sourceManifestFile);
 
         $result = $this->client->getObject([
             'Bucket'     => $this->bucket,
-            'Key'        => $this->manifestFile,
+            'Key'        => $this->sourceManifestFile,
             'SaveAs'     => $this->storageDir . self::MANIFEST_FILE,
         ]);
 
@@ -357,7 +357,7 @@ class Source
     {
         $this->logger->progressMessage('Downloading sql files');
         
-        foreach ($this->sqlFiles as $sqlFile) {
+        foreach ($this->sourceSqlFiles as $sqlFile) {
             $this->logger->progressMessage('Downloading sql file: ' . $sqlFile);
 
             $this->client->getObject([
@@ -372,6 +372,74 @@ class Source
         $this->logger->completeMessage('SQL file downloads complete');
     }
 
+    /**
+     * Runs the obfuscation on the prepared DB
+     * @return void
+     */
+    private function obfuscate()
+    {
+        $files = glob($this->storageDir . '*.sql'); // get all sql file names
+
+        foreach($files as $sqlFile) {
+            $this->logger->progressMessage('Importing ' . basename($sqlFile));
+            
+            if (filesize($sqlFile) > 100000000) { // 500 MB
+                $this->splitAndImportFile($sqlFile);
+            } else {
+                $this->importDbFile($sqlFile);
+            }
+
+            $this->logger->completeMessage('Import complete'); 
+        }
+    }
+    
+    /**
+     * Import file to DB
+     * @param string $sqlFile 
+     * @return void
+     */
+    private function importDbFile($sqlFile)
+    {
+        if (!file_exists($sqlFile)) {
+            throw new \Exception("SQL file $sqlFile does not exist");
+        }
+
+        $sql = file_get_contents($sqlFile);
+        
+        $this->runDbQuery($sql);
+
+        unset($sql);
+    }
+
+    /**
+     * Splits a large DB file into sections and imports each one
+     * @param string $sqlFile 
+     * @return void
+     */
+    private function splitAndImportFile($sqlFile)
+    {
+        $this->logger->completeMessage('Splitting file');
+        // split file into smaller parts so we can avoid importing a huge file
+        exec("split --lines=2000 " . $sqlFile . " " . $this->storageDir . $this->partsDir);
+
+        $dbPartFiles = array_diff(scandir($this->storageDir . $this->partsDir), array('..', '.'));
+
+        $this->logger->completeMessage('DB dump has been split into ' . count($dbPartFiles) . ' parts');
+
+        foreach ($dbPartFiles as $filename) {
+            $this->importDbFile($this->storageDir . $this->partsDir . $filename);
+
+            $this->logger->completeMessage('Imported DB part ' . $filename);
+        }
+
+        $this->logger->completeMessage('Completed parts import. Emptying local storage parts directory');
+        $this->emptyStorageDir($this->storageDir . $this->partsDir);
+    }
+
+    /**
+     * runs the obfuscation
+     * @return void
+     */
     public function processObfuscation()
     {
         $identifier = $this->bucket . DIRECTORY_SEPARATOR . $this->directory;
@@ -391,6 +459,8 @@ class Source
 
         $this->downloadManifestFile();
         $this->downloadSqlFiles();
+
+        $this->obfuscate();
     }
 
 }
@@ -412,34 +482,6 @@ function processObfuscation(
         try {
 
 
-
-            while ($dbConnection->next_result()) {;} // flush multi_queries
-
-            $sql = file_get_contents(STORAGE_DIR . SQL_STRUCTURE_FILE);
-            if (!$dbConnection->multi_query($sql)) {
-                throw new \Exception('DB Error message: ' . $dbConnection->error . ' (creating table structure)');
-            }
-
-            progressMessage('✓ Created DB structure'); 
-
-            // split file into smaller parts so we can avoid importing a huge file
-            exec("split --lines=1000 " . STORAGE_DIR . SQL_DATA_FILE . " " . STORAGE_PARTS_DIR);
-
-            $dbPartFiles = array_diff(scandir(STORAGE_PARTS_DIR), array('..', '.'));
-
-            progressMessage('✓ DB dump has been split into ' . count($dbPartFiles) . ' parts');
-
-            foreach ($dbPartFiles as $filename) {
-                $sql = file_get_contents(STORAGE_PARTS_DIR . $filename);
-
-                while ($dbConnection->next_result()) {;} // flush multi_queries
-
-                if (!$dbConnection->multi_query($sql)) {
-                    throw new \Exception('DB Error message: ' . $dbConnection->error . ' when importing db part ' . $filename);
-                }
-
-                progressMessage('✓ Imported DB part ' . $filename);
-            }
 
             progressMessage('✓ Imported DB dump');
 
