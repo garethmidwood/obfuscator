@@ -556,7 +556,7 @@ class Source
         // push the structure file to storage
         $result = $destinationClient->putObject([
             'Bucket'     => $this->manifest['destination']['bucket'],
-            'Key'        => $this->manifest['destination']['dir'] . DIRECTORY_SEPARATOR . $vmanifest['destination']['structure_filename'],
+            'Key'        => $this->manifest['destination']['dir'] . DIRECTORY_SEPARATOR . $this->manifest['destination']['structure_filename'],
             'SourceFile' => $localDbStructureFile,
         ]);
 
