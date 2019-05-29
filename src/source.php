@@ -423,12 +423,14 @@ class Source
 
         $dbPartFiles = array_diff(scandir($this->storageDir . $this->partsDir), array('..', '.'));
 
-        $this->logger->completeMessage('DB dump has been split into ' . count($dbPartFiles) . ' parts');
+        $totalFiles = count($dbPartFiles);
 
-        foreach ($dbPartFiles as $filename) {
+        $this->logger->completeMessage('DB dump has been split into ' . $totalFiles . ' parts');
+
+        foreach ($dbPartFiles as $index => $filename) {
             $this->importDbFile($this->storageDir . $this->partsDir . $filename);
 
-            $this->logger->completeMessage('Imported DB part ' . $filename);
+            $this->logger->completeMessage("Imported DB part ($index of $totalFiles) " . $filename);
         }
 
         $this->logger->completeMessage('Completed parts import. Emptying local storage parts directory');
