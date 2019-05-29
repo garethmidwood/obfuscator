@@ -55,8 +55,8 @@ class obfuscationDbMysql extends obfuscationDb
         }
 
         if (!$this->dbConnection->multi_query($sql)) {
-            $this->logger->errorMessage(
-                'Could not run sql ' . $this->dbConnection->error . PHP_EOL . PHP_EOL . $sql, true
+            throw new \Exception(
+                'Could not run sql ' . $this->dbConnection->error . PHP_EOL . PHP_EOL . $sql
             );
         }
     }

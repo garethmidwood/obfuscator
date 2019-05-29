@@ -390,11 +390,15 @@ class Source
             throw new \Exception("SQL file $sqlFile does not exist");
         }
 
-        $sql = file_get_contents($sqlFile);
-        
-        $this->db->run($sql);
+        try {
+            $sql = file_get_contents($sqlFile);
+            
+            $this->db->run($sql);
 
-        unset($sql);
+            unset($sql);
+        } catch (\Exception $e) {
+            $this->logger->errorMessage($e->getMessage(), true);
+        }
     }
 
     /**
