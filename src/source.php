@@ -382,7 +382,7 @@ class Source
     /**
      * Import file to DB
      * @param string $sqlFile 
-     * @return void
+     * @return bool
      */
     private function importDbFile($sqlFile)
     {
@@ -397,8 +397,12 @@ class Source
 
             unset($sql);
         } catch (\Exception $e) {
-            $this->logger->errorMessage($e->getMessage(), true);
+            $this->logger->errorMessage($e->getMessage());
+
+            return false;
         }
+
+        return true;
     }
 
     /**
@@ -419,12 +423,17 @@ class Source
         $this->logger->completeMessage('DB dump has been split into ' . $totalFiles . ' parts  @ ' . date('H:i:s'));
 
         foreach ($dbPartFiles as $index => $filename) {
-            $this->importDbFile($this->storageDir . $this->partsDir . $filename);
+            $success = $this->importDbFile($this->storageDir . $this->partsDir . $filename);
 
-            $this->logger->completeMessage("Imported DB part ($index of $totalFiles) " . $filename . ' @ ' . date('H:i:s'));
+            if ($success) {
+                $this->logger->completeMessage("Imported DB part ($index of $totalFiles) " . $filename . ' @ ' . date('H:i:s'));
+            } else {
+                $this->logger->completeMessage("Error importing DB part ($index of $totalFiles) " . $filename . ' @ ' . date('H:i:s') . ' skipping the rest of this DB');
+                break;
+            }
         }
 
-        $this->logger->completeMessage('Completed parts import. Emptying local storage parts directory');
+        $this->logger->completeMessage('Parts import has finished. Emptying local storage parts directory');
         $this->emptyStorageDir($this->storageDir . $this->partsDir);
     }
 
