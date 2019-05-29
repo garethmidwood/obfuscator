@@ -5,6 +5,8 @@ include_once('./vendor/autoload.php');
 include_once('./logger.php');
 include_once('./obfuscator.php');
 include_once('./source.php');
+include_once('./obfuscationDb.php');
+include_once('./obfuscationDbMysql.php');
 
 use Symfony\Component\Yaml\Yaml;
 
@@ -72,25 +74,12 @@ $logger = new Logger();
 /**
  * DB Connection setup
  */
-$dbConnection = new mysqli(
-    $config['database']['host'] . ':' . $config['database']['port'],
+$dbConnection = new obfuscationDbMysql(
+    $config['database']['host'],
+    $config['database']['port'],
     $config['database']['user'],
     $config['database']['password']
 );
-
-if ($dbConnection->connect_errno) {
-    $logger->errorMessage('Database connection failed: ' . $dbConnection->connect_error, true);
-}
-
-$logger->progressMessage('Setting global database config');
-
-$sql = 'SET @@global.max_allowed_packet = 524288000';
-if (!$dbConnection->multi_query($sql)) {
-    $logger->errorMessage('Could not run sql ' . $dbConnection->error . PHP_EOL . PHP_EOL . $sql, true);
-}
-
-$logger->completeMessage('Set max_allowed_packet on DB');
-
 
 /**
  * Local file storage location setup

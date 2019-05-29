@@ -1,7 +1,5 @@
 <?php
 
-use Ifsnop\Mysqldump as IMysqldump;
-
 Class Obfuscator
 {
     /**
@@ -98,5 +96,3 @@ function obfuscateField(mysqli $dbConnection, string $tableName, string $obfusca
     progressMessage("✓ Obfuscated $obfuscationType fields in $tableName");
 }
 
-echo PHP_EOL;
-exit;

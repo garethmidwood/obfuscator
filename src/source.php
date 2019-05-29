@@ -43,23 +43,23 @@ class Source
     private $partsDir = 'parts/';
 
     /**
-     * @var mysqli
+     * @var obfuscationDb
      */
-    private $dbConnection;
+    private $db;
     private $obfuscationDbName = 'tmp_obfuscation';
 
     /**
      * Constructor
      * @param array $source 
      * @param string $storageDir
-     * @param mysqli $dbConnection
+     * @param obfuscationDb $db
      * @param Logger $logger
      * @return void
      */
     public function __construct(
         array $source,
         string $storageDir,
-        mysqli $dbConnection,
+        obfuscationDb $db,
         Logger $logger
     ) {
         if (!isset($source['type'])) {
@@ -98,59 +98,52 @@ class Source
 
         $this->logger = $logger;
 
-        $this->dbConnection = $dbConnection;
+        $this->db = $db;
 
-        $this->createClient();
+        $this->client = $this->createClient($this->region, $this->access, $this->secret);
     }
 
     /**
      * Connects to S3
-     * @return type
+     * @param string $region 
+     * @param string $access 
+     * @param string $secret 
+     * @return S3Client
      */
-    private function createClient() 
-    {
-        $this->client = new S3Client([
-            'region'  => $this->region,
+    private function createClient(
+        string $region,
+        string $access,
+        string $secret
+    ) {
+        return new S3Client([
+            'region'  => $region,
             'version' => 'latest',
             'credentials' => [
-                'key'    => $this->access,
-                'secret' => $this->secret,
+                'key'    => $access,
+                'secret' => $secret,
             ],
         ]);
     }
 
     /**
-     * Runs a query against the local DB
-     * @param string $sql 
-     * @return void
-     */
-    private function runDbQuery($sql) 
-    {
-        while ($this->dbConnection->more_results()
-            && $this->dbConnection->next_result()
-        ) {
-            ; // flush multi_queries
-        }
-
-        if (!$this->dbConnection->multi_query($sql)) {
-            $this->logger->errorMessage(
-                'Could not run sql ' . $this->dbConnection->error . PHP_EOL . PHP_EOL . $sql, true
-            );
-        }
-    }
-
-    /**
      * Gathers details of the manifest and sql files to process
+     * @param string $directory
      * @return void
      */
-    private function gatherFileDetails()
+    private function gatherFileDetails($directory)
     {
+        $this->logger->progressMessage('Gathering file details for ' . $directory);
+
         $params = array(
             'Bucket' => $this->bucket,
-            'Prefix' => $this->directory
+            'Prefix' => $directory
         );
 
         $objects = $this->client->getIterator('ListObjects', $params);
+
+        // reset
+        $this->sourceManifestFile = null;
+        $this->sourceSqlFiles = [];
 
         foreach ($objects as $object) {
             $pathinfo = pathinfo($object['Key']);
@@ -164,6 +157,8 @@ class Source
                 $this->logger->errorMessage('unrecognised file: ' . $pathinfo['basename']);
             }
         }
+
+        $this->logger->completeMessage('Gathered file details');
     }
 
     /**
@@ -253,21 +248,19 @@ class Source
     {
         $this->logger->progressMessage('Preparing obfuscation database');
 
-        $this->runDbQuery('DROP DATABASE IF EXISTS ' . $this->obfuscationDbName);
+        $this->db->run('DROP DATABASE IF EXISTS ' . $this->obfuscationDbName);
         
         $this->logger->completeMessage('Removed database ' . $this->obfuscationDbName); 
 
-        $this->runDbQuery('CREATE DATABASE ' . $this->obfuscationDbName);
+        $this->db->run('CREATE DATABASE ' . $this->obfuscationDbName);
 
         $this->logger->completeMessage('Created database ' . $this->obfuscationDbName); 
 
-        if (!$this->dbConnection->select_db($this->obfuscationDbName)) {
-            throw new \Exception('DB Error message: Can\'t select database ' . $this->obfuscationDbName);
-        }
+        $this->db->selectDb($this->obfuscationDbName);
 
         $this->logger->completeMessage('Selected database');
 
-        $this->runDbQuery('SET FOREIGN_KEY_CHECKS=0;');
+        $this->db->run('SET FOREIGN_KEY_CHECKS=0;');
         
         $this->logger->completeMessage('Turned off foreign key checks');
     }
@@ -278,6 +271,10 @@ class Source
      */
     private function downloadManifestFile()
     {
+        if (!isset($this->sourceManifestFile)) {
+            throw new \Exception('Manifest file was not found');
+        }
+
         $this->logger->progressMessage('Downloading manifest file ' . $this->sourceManifestFile);
 
         $result = $this->client->getObject([
@@ -332,13 +329,15 @@ class Source
             $this->logger->errorMessage('destination data_filename node is required', true);
         }
 
+        $this->manifest = $manifest;
+
         $this->logger->completeMessage('Manifest file passed checks');
 
         // if (DRY_RUN) {
         //     foreach($manifest['data'] as $database) {
         //         foreach ($database as $tableName => $table) {
         //             foreach($table as $obfuscationType => $fields) {
-        //                 obfuscateField($dbConnection, $tableName, $obfuscationType, $fields, DRY_RUN);
+        //                 obfuscateField($db, $tableName, $obfuscationType, $fields, DRY_RUN);
         //             }
 
         //             progressMessage('✓ Completed obfuscation of ' . $tableName);
@@ -373,10 +372,10 @@ class Source
     }
 
     /**
-     * Runs the obfuscation on the prepared DB
+     * Imports the database files
      * @return void
      */
-    private function obfuscate()
+    private function importDbs()
     {
         $files = glob($this->storageDir . '*.sql'); // get all sql file names
 
@@ -406,7 +405,7 @@ class Source
 
         $sql = file_get_contents($sqlFile);
         
-        $this->runDbQuery($sql);
+        $this->db->run($sql);
 
         unset($sql);
     }
@@ -437,155 +436,222 @@ class Source
     }
 
     /**
+     * Obfuscates the fields in the DB
+     * @return void
+     */
+    private function obfuscate()
+    {
+        foreach($this->manifest['data'] as $database) {
+            foreach ($database as $tableName => $table) {
+                foreach($table as $obfuscationType => $fields) {
+                    $this->obfuscateFieldsByType($tableName, $obfuscationType, $fields);
+                }
+
+                $this->logger->completeMessage('Completed obfuscation of ' . $tableName);
+            }
+        }
+    }
+
+    /**
+     * Obfuscates fields of a specific type
+     * @param string $tableName 
+     * @param string $obfuscationType 
+     * @param array $fields 
+     * @param bool|bool $dryRun 
+     * @return type
+     */
+    private function obfuscateFieldsByType (
+        string $tableName,
+        string $obfuscationType,
+        array $fields,
+        bool $dryRun = false
+    ) {
+        $fieldUpdates = [];
+
+        foreach($fields as $field) {
+            switch($obfuscationType) {
+                case 'email':
+                    $fieldUpdates[] = "`$field` = concat(LEFT(UUID(), 8), '@example.com')";
+                    break;
+                case 'date':
+                    $fieldUpdates[] = "`$field` = CURDATE()";
+                    break;
+                case 'string':
+                    $fieldUpdates[] = "`$field` = LEFT(UUID(), 10)";
+                    break;
+                case 'float':
+                    $fieldUpdates[] = "`$field` = '1.0'";
+                    break;
+                case 'bigint':
+                    $fieldUpdates[] = "`$field` = '12345'";
+                    break;
+                case 'int':
+                    $fieldUpdates[] = "`$field` = '10'";
+                    break;
+                case 'phone':
+                    $fieldUpdates[] = "`$field` = '01234567890'";
+                    break;
+                default:
+                    $this->logger->completeMessage("Unrecognised field type $obfuscationType for `$field` - skipping");
+                    break;
+            }
+        }
+
+        $query = 'UPDATE ' . $tableName . ' set ' . implode(',', $fieldUpdates) . ' WHERE 1=1';
+
+        // TODO: Move Dry run to a contructor param
+        if ($dryRun) {
+            $this->logger->completeMessage("DRY RUN: $query");
+        } else {
+            $this->db->run($query);
+        }
+
+        $this->logger->completeMessage("Obfuscated $obfuscationType fields in $tableName");
+    }
+
+    /**
+     * Dumps the obfuscated database
+     * @return void
+     */
+    private function dumpDb()
+    {
+        $this->logger->progressMessage('Dumping database');
+
+        $outfile = $this->storageDir . '99_obfuscated_data.sql';
+
+        $this->db->dumpDbData($this->obfuscationDbName, $outfile);
+
+        $this->logger->completeMessage('Dumped cleansed database');
+    }
+
+    /**
+     * Pushes the obfuscated DB to storage location
+     * @return void
+     */
+    private function pushDumpToDestination()
+    {
+        $this->logger->progressMessage('Pushing dump to storage destination');
+
+        $destinationClient = $this->createClient(
+            $this->manifest['destination']['region'],
+            $this->manifest['destination']['access'],
+            $this->manifest['destination']['secret']
+        );
+
+        $this->logger->completeMessage('Connected to destination');        
+
+        $localDumpFile = $this->storageDir . '99_obfuscated_data.sql';
+
+        // push the data file to storage
+        $result = $destinationClient->putObject([
+            'Bucket'     => $this->manifest['destination']['bucket'],
+            'Key'        => $this->manifest['destination']['dir'] . DIRECTORY_SEPARATOR . $this->manifest['destination']['data_filename'],
+            'SourceFile' => $localDumpFile
+        ]);
+
+        $this->logger->completeMessage('Pushed cleansed data DB to destination');
+
+        $localDbStructureFile = $this->storageDir . '03_structure_obfuscated.sql';
+
+        // push the structure file to storage
+        $result = $destinationClient->putObject([
+            'Bucket'     => $this->manifest['destination']['bucket'],
+            'Key'        => $this->manifest['destination']['dir'] . DIRECTORY_SEPARATOR . $vmanifest['destination']['structure_filename'],
+            'SourceFile' => $localDbStructureFile,
+        ]);
+
+        $this->logger->completeMessage('Pushed cleansed DB structure to destination');
+
+        $this->logger->completeMessage('Pushed all DB parts to destination');
+    }
+
+    private function deleteManifest()
+    {
+        $this->logger->progressMessage('Removing manifest from source');
+
+        // delete the manifest from S3, but not the DB dumps
+        $result = $this->client->deleteObject([
+            'Bucket'     => $this->bucket,
+            'Key'        => $this->sourceManifestFile
+        ]);
+
+        $this->logger->completeMessage('Deleted manifest from source');
+    }
+
+    private function getBucketDirectories()
+    {
+        $directories = [];
+
+        $params = array(
+            'Bucket' => $this->bucket
+        );
+
+        $objects = $this->client->getIterator('ListObjects', $params);
+
+        foreach ($objects as $object) {
+            $pathparts = explode('/', $object['Key']);
+            $dir = $pathparts[0];
+
+            if (!in_array($dir, $directories)) {
+                $directories[] = $dir;
+            }
+        }
+
+        return $directories;
+    }
+
+    /**
      * runs the obfuscation
      * @return void
      */
     public function processObfuscation()
     {
-        $identifier = $this->bucket . DIRECTORY_SEPARATOR . $this->directory;
+        $directories = [];
 
-        $this->gatherFileDetails();
+        // if there's no set directory then we need to scan the root and work through each dir individually
+        if ($this->directory == '') {
+            $directories = $this->getBucketDirectories();
+        } else {
+            $directories[] = $this->directory;
+        }
 
-        if (!$this->runPreObfuscationChecks()) {
-            $this->logger->errorMessage(
-                'Source did not pass pre-obfuscation checks, skipping ' . $identifier
-            );
+        foreach ($directories as $directory) {
+            $identifier = $this->bucket . DIRECTORY_SEPARATOR . $directory;
+
+            $this->gatherFileDetails($directory);
+
+            if (!$this->runPreObfuscationChecks()) {
+                $this->logger->errorMessage(
+                    'Source did not pass pre-obfuscation checks, skipping ' . $identifier
+                );
+
+                continue;
+            }
+
+            try {
+                $this->emptyStorageDirs();
+                $this->prepObfuscationDb();
+
+                $this->logger->progressMessage('Processing ' . $identifier);
+
+                $this->downloadManifestFile();
+                $this->downloadSqlFiles();
+
+                $this->importDbs();
+
+                $this->obfuscate();
+
+                $this->dumpDb();
+
+                $this->pushDumpToDestination();
+
+                $this->deleteManifest();    
+            } catch (\Exception $e) {
+                $this->logger->errorMessage('Could not process ' . $identifier . ' because: ' . $e->getMessage());
+            }
         }
 
         $this->emptyStorageDirs();
-        $this->prepObfuscationDb();
-
-        $this->logger->progressMessage('Processing ' . $identifier);
-
-        $this->downloadManifestFile();
-        $this->downloadSqlFiles();
-
-        $this->obfuscate();
-    }
-
-}
-
-
-
-
-
-
-
-
-
-function processObfuscation(
-    \Aws\S3\S3Client $sourceClient, array $pairedObjects, array $source, mysqli $dbConnection, array $dbConnectionDetails) {
-
-    foreach($pairedObjects as $path => $pair) {
-        
-
-        try {
-
-
-
-            progressMessage('✓ Imported DB dump');
-
-
-            foreach($manifest['data'] as $database) {
-                foreach ($database as $tableName => $table) {
-                    foreach($table as $obfuscationType => $fields) {
-                        obfuscateField($dbConnection, $tableName, $obfuscationType, $fields);
-                    }
-
-                    progressMessage('✓ Completed obfuscation of ' . $tableName);
-                }
-            }
-
-
-
-
-
-            // create AWS client for pushing to destination
-            $destinationClient = new \Aws\S3\S3Client([
-                'region'  => $manifest['destination']['region'],
-                'version' => 'latest',
-                'credentials' => [
-                    'key'    => $manifest['destination']['access'],
-                    'secret' => $manifest['destination']['secret'],
-                ],
-            ]);
-
-            progressMessage('✓ Connected to destination');
-
-
-
-
-
-            // dump the DB data file locally
-            $dump = new IMysqldump\Mysqldump(
-                'mysql:host=' . $dbConnectionDetails['host'] . ':' . $dbConnectionDetails['port'] . ';dbname=' . $databaseName,
-                $dbConnectionDetails['user'],
-                $dbConnectionDetails['password'],
-                [
-                    'add-drop-table' => true,
-                    'no-create-info' => true
-                ]
-            );
-            $dump->start(CLEANSED_DB_FILE);
-
-            progressMessage('✓ Dumped cleansed database');
-
-            // push the data file to storage
-            $result = $destinationClient->putObject([
-                'Bucket'     => $manifest['destination']['bucket'],
-                'Key'        => $manifest['destination']['dir'] . DIRECTORY_SEPARATOR . $manifest['destination']['data_filename'],
-                'SourceFile' => CLEANSED_DB_FILE,
-            ]);
-
-            progressMessage('✓ Pushed cleansed data DB to destination');
-
-            // push the structure file to storage
-            $result = $destinationClient->putObject([
-                'Bucket'     => $manifest['destination']['bucket'],
-                'Key'        => $manifest['destination']['dir'] . DIRECTORY_SEPARATOR . $manifest['destination']['structure_filename'],
-                'SourceFile' => STORAGE_DIR . SQL_STRUCTURE_FILE,
-            ]);
-
-            progressMessage('✓ Pushed cleansed DB to destination');
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-            // delete the manifest from S3, but not the DB dumps
-            $result = $sourceClient->deleteObject([
-                'Bucket'     => $source['bucket'],
-                'Key'        => $path . DIRECTORY_SEPARATOR . $pair['yml']
-            ]);
-
-            progressMessage('✓ Deleted manifest from source');
-
-        } catch(\Exception $e) {
-            // raise error, but keep processing
-            errorMessage($e->getMessage());
-        }
-
-        while ($dbConnection->next_result()) {;} // flush multi_queries
-
-        cleanUpFiles();
-        cleanUpDatabase($dbConnection, $databaseName);
-
-        progressMessage('========================');
     }
 }
+
