@@ -6,6 +6,7 @@ use Symfony\Component\Yaml\Yaml;
 class Source
 {
     const MANIFEST_FILE = 'manifest.yml';
+    
     /**
      * @var string
      */
@@ -331,21 +332,7 @@ class Source
 
         $this->manifest = $manifest;
 
-        $this->logger->completeMessage('Manifest file passed checks');
-
-        // if (DRY_RUN) {
-        //     foreach($manifest['data'] as $database) {
-        //         foreach ($database as $tableName => $table) {
-        //             foreach($table as $obfuscationType => $fields) {
-        //                 obfuscateField($db, $tableName, $obfuscationType, $fields, DRY_RUN);
-        //             }
-
-        //             progressMessage('✓ Completed obfuscation of ' . $tableName);
-        //         }
-        //     }
-        //     continue;
-        // }
-        
+        $this->logger->completeMessage('Manifest file passed checks');        
     }
 
     /**
@@ -459,14 +446,12 @@ class Source
      * @param string $tableName 
      * @param string $obfuscationType 
      * @param array $fields 
-     * @param bool|bool $dryRun 
      * @return type
      */
     private function obfuscateFieldsByType (
         string $tableName,
         string $obfuscationType,
-        array $fields,
-        bool $dryRun = false
+        array $fields
     ) {
         $fieldUpdates = [];
 
@@ -501,12 +486,7 @@ class Source
 
         $query = 'UPDATE ' . $tableName . ' set ' . implode(',', $fieldUpdates) . ' WHERE 1=1';
 
-        // TODO: Move Dry run to a contructor param
-        if ($dryRun) {
-            $this->logger->completeMessage("DRY RUN: $query");
-        } else {
-            $this->db->run($query);
-        }
+        $this->db->run($query);
 
         $this->logger->completeMessage("Obfuscated $obfuscationType fields in $tableName");
     }
@@ -567,6 +547,10 @@ class Source
         $this->logger->completeMessage('Pushed all DB parts to destination');
     }
 
+    /**
+     * Deletes the manifest file from the bucket after processing
+     * @return void
+     */
     private function deleteManifest()
     {
         $this->logger->progressMessage('Removing manifest from source');
@@ -580,6 +564,10 @@ class Source
         $this->logger->completeMessage('Deleted manifest from source');
     }
 
+    /**
+     * Retrieves a list of the directories in the root of the bucket
+     * @return array
+     */
     private function getBucketDirectories()
     {
         $directories = [];
