@@ -408,20 +408,20 @@ class Source
      */
     private function splitAndImportFile($sqlFile)
     {
-        $this->logger->completeMessage('Splitting file');
+        $this->logger->completeMessage('Splitting file @ ' . date('H:i:s'));
         // split file into smaller parts so we can avoid importing a huge file
         exec("split --lines=2000000 " . $sqlFile . " " . $this->storageDir . $this->partsDir);
 
-        $dbPartFiles = array_diff(scandir($this->storageDir . $this->partsDir), array('..', '.'));
+        $dbPartFiles = array_values(array_diff(scandir($this->storageDir . $this->partsDir), array('..', '.')));
 
         $totalFiles = count($dbPartFiles);
 
-        $this->logger->completeMessage('DB dump has been split into ' . $totalFiles . ' parts');
+        $this->logger->completeMessage('DB dump has been split into ' . $totalFiles . ' parts  @ ' . date('H:i:s'));
 
         foreach ($dbPartFiles as $index => $filename) {
             $this->importDbFile($this->storageDir . $this->partsDir . $filename);
 
-            $this->logger->completeMessage("Imported DB part ($index of $totalFiles) " . $filename);
+            $this->logger->completeMessage("Imported DB part ($index of $totalFiles) " . $filename . ' @ ' . date('H:i:s'));
         }
 
         $this->logger->completeMessage('Completed parts import. Emptying local storage parts directory');
