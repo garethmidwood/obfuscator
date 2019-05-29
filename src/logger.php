@@ -4,7 +4,7 @@ class Logger
 {
     public function errorMessage(string $message, $die = false)
     {
-        echo "   ✗ $message" . PHP_EOL;
+        echo date('H:i:s') . "      ✗ $message" . PHP_EOL;
 
         if ($die) {
             exit();
@@ -13,11 +13,11 @@ class Logger
 
     public function progressMessage(string $message)
     {
-        echo "• $message" . PHP_EOL;
+        echo date('H:i:s') . "   • $message" . PHP_EOL;
     }
 
     public function completeMessage(string $message)
     {
-        echo "   ✓ $message" . PHP_EOL;
+        echo date('H:i:s') . "      ✓ $message" . PHP_EOL;
     }
 }

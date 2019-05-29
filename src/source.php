@@ -412,7 +412,7 @@ class Source
      */
     private function splitAndImportFile($sqlFile)
     {
-        $this->logger->completeMessage('Splitting file @ ' . date('H:i:s'));
+        $this->logger->completeMessage('Splitting file');
         // split file into smaller parts so we can avoid importing a huge file
         exec("split --lines=2000000 " . $sqlFile . " " . $this->storageDir . $this->partsDir);
 
@@ -420,15 +420,15 @@ class Source
 
         $totalFiles = count($dbPartFiles);
 
-        $this->logger->completeMessage('DB dump has been split into ' . $totalFiles . ' parts  @ ' . date('H:i:s'));
+        $this->logger->completeMessage('DB dump has been split into ' . $totalFiles . ' parts');
 
         foreach ($dbPartFiles as $index => $filename) {
             $success = $this->importDbFile($this->storageDir . $this->partsDir . $filename);
 
             if ($success) {
-                $this->logger->completeMessage("Imported DB part ($index of $totalFiles) " . $filename . ' @ ' . date('H:i:s'));
+                $this->logger->completeMessage("Imported DB part ($index of $totalFiles) " . $filename);
             } else {
-                $this->logger->completeMessage("Error importing DB part ($index of $totalFiles) " . $filename . ' @ ' . date('H:i:s') . ' skipping the rest of this DB');
+                $this->logger->completeMessage("Error importing DB part ($index of $totalFiles) " . $filename . ' skipping the rest of this DB');
                 break;
             }
         }
