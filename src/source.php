@@ -406,7 +406,7 @@ class Source
     {
         $this->logger->completeMessage('Splitting file');
         // split file into smaller parts so we can avoid importing a huge file
-        exec("split --lines=2000 " . $sqlFile . " " . $this->storageDir . $this->partsDir);
+        exec("split --lines=2000000 " . $sqlFile . " " . $this->storageDir . $this->partsDir);
 
         $dbPartFiles = array_diff(scandir($this->storageDir . $this->partsDir), array('..', '.'));
 
@@ -446,7 +446,7 @@ class Source
      * @param string $tableName 
      * @param string $obfuscationType 
      * @param array $fields 
-     * @return type
+     * @return void
      */
     private function obfuscateFieldsByType (
         string $tableName,
